@@ -1,0 +1,10 @@
+{
+  "work_dir": "/Users/moulikchatterjee/Documents/UCLA /Clubs and Activities/Bruin Sports Analytics/Research/Football Research 2026/Football Gravity Metrics/BSA-Football-2026-Gravity-Metrics/Data Cleaning + Engineering",
+  "source_dir": "/Users/moulikchatterjee/Documents/UCLA /Clubs and Activities/Bruin Sports Analytics/Research/Football Research 2026/Football Gravity Metrics/BSA-Football-2026-Gravity-Metrics/Data Cleaning + Engineering/source_copies",
+  "cleaned_dir": "/Users/moulikchatterjee/Documents/UCLA /Clubs and Activities/Bruin Sports Analytics/Research/Football Research 2026/Football Gravity Metrics/BSA-Football-2026-Gravity-Metrics/Data Cleaning + Engineering/cleaned_csv",
+  "outputs_dir": "/Users/moulikchatterjee/Documents/UCLA /Clubs and Activities/Bruin Sports Analytics/Research/Football Research 2026/Football Gravity Metrics/BSA-Football-2026-Gravity-Metrics/Data Cleaning + Engineering/outputs",
+  "outputs_csv_dir": "/Users/moulikchatterjee/Documents/UCLA /Clubs and Activities/Bruin Sports Analytics/Research/Football Research 2026/Football Gravity Metrics/BSA-Football-2026-Gravity-Metrics/Data Cleaning + Engineering/outputs_csv",
+  "rows_play_context": 8557,
+  "rows_play_player_roles": 188254,
+  "rows_gravity_base": 188254
+}
