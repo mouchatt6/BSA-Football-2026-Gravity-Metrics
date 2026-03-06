@@ -1,2 +1,18 @@
 .DS_Store
 *.parquet
+
+# Local editor and rendered docs
+.vscode/
+README.html
+README_files/
+Data Cleaning + Engineering/README.html
+Data Cleaning + Engineering/README_files/
+
+# Large raw tracking data (shared externally, not in git)
+datasets/Weeks-data/
+datasets/weeks-data/
+
+# Large generated datasets (rebuild locally)
+Data Cleaning + Engineering/cleaned_csv/weeks_tracking_cleaned.csv
+Data Cleaning + Engineering/cleaned_csv/weeks_tracking_extracted.csv
+Data Cleaning + Engineering/outputs_csv/gravity_base.csv
