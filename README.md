@@ -1,126 +1,137 @@
 # BSA Football 2026: Pass Rusher Gravity Metrics
 
-This repository is for Bruin Sports Analytics football research on a pass rusher "gravity" metric.
-The goal is to measure which pass rushers draw more blocking attention than expected, then quantify
-that excess attention as a residual.
-
-## Project Scope
-
-Inspired by NBA gravity concepts, this project translates "defensive attention" to pass-rush
-situations in football.
-
-High-level modeling concept:
-
-1. Build a play and player-level pass protection context dataset.
-2. Compute actual attention from matchup behavior.
-3. Model expected attention from context.
-4. Define gravity as:
+This repository supports Bruin Sports Analytics research on a pass rusher "gravity" metric:
 
 `gravity = actual_attention - expected_attention`
 
-Current repository work is focused on Step 1 (data engineering and merged dataset construction).
+The current phase is data engineering and frame-level dataset construction for downstream modeling.
 
-## Current Repository Structure
+## Project Structure
 
 ```text
 BSA-Football-2026-Gravity-Metrics/
 ├── README.md
+├── .gitignore
+├── Data-download-scripts/
+│   └── download_data.sh
 ├── datasets/
 │   ├── games.csv
 │   ├── plays.csv
 │   ├── plays_cleaned.csv
 │   ├── players.csv
-│   └── pffScoutingData.csv
+│   ├── pffScoutingData.csv
+│   └── Weeks-data/                # local-only, downloaded from Google Drive
 ├── Gravity Metrics EDA/
 │   ├── Scouting Data EDA.ipynb
 │   └── bsa_research_test.ipynb
 └── Data Cleaning + Engineering/
     ├── README.md
-    ├── source_copies/
+    ├── scripts/
+    │   ├── build_gravity_dataset.py
+    │   └── build_gravity_dataset.ipynb
     ├── cleaned_csv/
     ├── outputs/
-    ├── outputs_csv/
-    └── scripts/
-        ├── build_gravity_dataset.py
-        └── build_gravity_dataset.ipynb
+    └── outputs_csv/
 ```
 
-## Data Engineering Workspace
+## Data Policy (Git vs Local)
 
-`Data Cleaning + Engineering/` is an isolated pipeline workspace.
+This repo is configured to commit code + config + metadata, not large raw/generated datasets.
 
-- `source_copies/`: duplicated CSV inputs used by the pipeline (original files remain untouched).
-- `cleaned_csv/`: cleaned versions of duplicated source tables.
-- `outputs_csv/`: final merged datasets for analysis in pandas.
-- `outputs/pipeline_summary.json`: row counts and run metadata.
-- `scripts/build_gravity_dataset.py`: script version of the pipeline.
-- `scripts/build_gravity_dataset.ipynb`: notebook walkthrough version of the same flow.
+Ignored in git:
+- `datasets/Weeks-data/`
+- `Data Cleaning + Engineering/cleaned_csv/weeks_tracking_*.csv`
+- `Data Cleaning + Engineering/outputs_csv/gravity_base.csv`
 
-## Current Output Datasets
+Reason: weekly tracking and frame-level outputs are too large for normal git workflows.
 
-The pipeline currently writes two main CSV outputs:
+## Local Data Setup
 
-1. `play_context.csv`
-   - Grain: one row per play (`gameId`, `playId`)
-   - Source merge: `plays_cleaned + games`
-   - Includes contextual and filter-flag columns (screen/rpo/spike proxies)
+Base tables are expected in `datasets/`:
+- `games.csv`
+- `plays.csv`
+- `plays_cleaned.csv`
+- `players.csv`
+- `pffScoutingData.csv`
 
-2. `gravity_base.csv`
-   - Grain: one row per play-player (`gameId`, `playId`, `nflId`)
-   - Source merge: `play_context + pffScoutingData + players`
-   - Main table for downstream pandas indexing and gravity metric development
+Weekly tracking files must be downloaded locally into `datasets/Weeks-data/`:
+- `week1.csv` ... `weekN.csv`
 
-## How to Run the Current Pipeline
+Use helper script:
 
-From repository root:
+```bash
+bash Data-download-scripts/download_data.sh "<GOOGLE_DRIVE_FOLDER_URL>"
+```
+
+Or:
+
+```bash
+export BSA_WEEKS_GDRIVE_URL="<GOOGLE_DRIVE_FOLDER_URL>"
+bash Data-download-scripts/download_data.sh
+```
+
+Dependency:
+
+```bash
+pip install gdown
+```
+
+## Pipeline Run
+
+Script:
 
 ```bash
 python3 "Data Cleaning + Engineering/scripts/build_gravity_dataset.py"
 ```
 
-Or run the notebook:
+Notebook:
 
 ```bash
 jupyter notebook "Data Cleaning + Engineering/scripts/build_gravity_dataset.ipynb"
 ```
 
-## Merge Logic (Current)
+## What the Pipeline Produces
 
-1. Clean CSV formatting issues (column whitespace, NA strings, key typing).
-2. Build `play_context` by left-joining `plays_cleaned` to `games` on `gameId`.
-3. Shape PFF table by dropping impact stats not needed for attention/gravity engineering.
-4. Build player-level table by joining `play_context` to shaped PFF on (`gameId`, `playId`).
-5. Join player bio metadata from `players` on `nflId`.
-6. Save `play_context.csv` and `gravity_base.csv`.
+Main outputs:
 
-## Future Plan
+1. `Data Cleaning + Engineering/outputs_csv/play_context.csv`
+   - Play-level context table (`gameId`, `playId`)
 
-### Near Term
+2. `Data Cleaning + Engineering/outputs_csv/gravity_base.csv` (local-only)
+   - Frame-level merged modeling table (`gameId`, `playId`, `nflId` + tracking frames)
+   - Includes weekly tracking features (`frameID`, `play time`, `x`, `y`, `s`, `a`, `dis`, `o`, `dir`, `event`)
+   - Applies schema cleanup and selected column drops for file-size reduction
 
-1. Align pipeline input to the `datasets/` folder as source-of-truth (or keep it synced into `source_copies/`).
-2. Improve pass-play eligibility logic for:
-   - non-screen
-   - non-RPO
-   - non-QB spike
-   - TTT <= 1.5s and behind LOS exclusions (once TTT and LOS fields are integrated)
-3. Add validation checks on key uniqueness and merge coverage in pipeline outputs.
+Supporting cleaned files:
 
-### Metric Development
+- `Data Cleaning + Engineering/cleaned_csv/weeks_tracking_cleaned.csv`
+- `Data Cleaning + Engineering/cleaned_csv/weeks_tracking_extracted.csv`
 
-1. Build frame-level blocker-rusher matchup assignment logic.
-2. Compute play-level actual attention scores by pass rusher.
-3. Add stunt-aware adjustments (screen setter vs looper behavior).
-4. Train expected-attention model using contextual features (alignment, personnel, down-distance, formations, play action).
-5. Compute residual gravity and normalize with percentiles/z-scores.
+Run metadata:
 
-### Modeling and Analysis
+- `Data Cleaning + Engineering/outputs/pipeline_summary.json`
 
-1. Create evaluation tables for player-level stability and signal quality.
-2. Build visual reports for ranking pass rushers by gravity.
-3. Compare gravity against conventional pressure/sack metrics to identify unique signal.
+## Current Merge Flow
+
+1. Clean base CSVs (schema/NA/type normalization).
+2. Build `play_context`:
+   - `plays_cleaned + games` on `gameId`
+3. Shape PFF table:
+   - keep matchup/blocking fields, drop impact outcome fields
+4. Merge player context:
+   - `play_context + pffScoutingData` on (`gameId`, `playId`)
+   - `+ players` on `nflId`
+5. Clean weekly tracking files from `datasets/Weeks-data`:
+   - recover malformed headers if present
+   - normalize `NA`/`None`/blank values
+   - standardize casing and numeric types
+6. Extract requested tracking fields:
+   - `gameID, playID, frameID, time, jerseyNumber, playDirection, x, y, s, a, dis, o, dir, event`
+7. Build `gravity_base` using one-to-many frame join:
+   - merge on (`gameId`, `playId`, `nflId`)
 
 ## Notes
 
-- Project workflow is pandas-first (no SQL dependency in current pipeline design).
-- Original source files should remain unchanged; data engineering should run on copies.
-- Large CSV outputs may trigger GitHub large-file warnings; consider Git LFS if output files grow further.
+- Workflow is pandas-first (no SQL dependency required).
+- `gravity_base.csv` can be regenerated by any teammate with local week data and pipeline scripts.
+- If you want the Google Drive folder link baked into docs/scripts, add the link and update the placeholder commands above.
