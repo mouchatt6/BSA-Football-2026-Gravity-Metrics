@@ -1,5 +1,8 @@
 .DS_Store
 *.parquet
+.venv/
+.ipynb_checkpoints/
+__pycache__/
 
 # Local editor and rendered docs
 .vscode/
@@ -16,3 +19,6 @@ datasets/weeks-data/
 Data Cleaning + Engineering/cleaned_csv/weeks_tracking_cleaned.csv
 Data Cleaning + Engineering/cleaned_csv/weeks_tracking_extracted.csv
 Data Cleaning + Engineering/outputs_csv/gravity_base.csv
+
+Data Cleaning + Engineering/outputs_csv/blocker_rusher_matchups.csv
+Data Cleaning + Engineering/outputs_csv/base_filtered.csv
