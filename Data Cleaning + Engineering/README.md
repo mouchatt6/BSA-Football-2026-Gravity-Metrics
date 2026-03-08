@@ -57,6 +57,8 @@ I outputted two datasets:
 - `blocker_rusher_matchups.csv`
 - `base_filtered.csv`
 
+### Location of the datasets (Google Drive shared folder):
+
 Both of these files are in the shared Google Drive folder under the subfolder **"Output Datasets"** and under the zip file **michael_datasets.zip**.
 
 
