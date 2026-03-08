@@ -84,14 +84,27 @@ The dataset is at the level of:
 
 This dataset only includes plays where:
 
-- dropbackType isn't a rollout or designed QB scramble
+- dropbackType isn't a rollout or designed QB run (so dropbackType either = "Traditional" or "Scramble")
 - play wasn't nullified by penalty (dropbackType != 'Unknown')
 - pass rush window is not <= 10 frames
 
 Pass rush window is defined by:
 
-- Lower bound: 0.5 seconds after ball_snap event happens.
-- Upper bound: Whichever happens first - Time-to-throw reaches 3.0 seconds after ball_snap, QB throws pass, QB gets sacked/strip-sacked, QB scrambles outside tackle box
+- Lower bound (Inclusive): 0.5 seconds after ball_snap event happens.
+- Upper bound (Non-inclusive): Whichever happens first - Time-to-throw exceeds > 3.0 seconds after ball_snap, QB throws pass, QB gets sacked/strip-sacked, QB scrambles outside tackle box
+
+This dataset only includes matchups where the weighted distance between the pass blocker and the pass rusher is <= 3.5.
+
+The formula for weighted distance is:
+
+- **weighted distance = actual distance / cos(theta)**
+
+where:
+
+- **actual distance** is the Euclidean distance between the pass blocker and the pass rusher at that frame
+- **theta** is the angle between:
+  - the vector pointing from the blocker’s location to the rusher’s location, and
+  - the blocker’s orientation direction
 
 
 
