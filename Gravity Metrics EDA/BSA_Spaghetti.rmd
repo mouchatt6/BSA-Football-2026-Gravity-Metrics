@@ -1,0 +1,948 @@
+---
+title: "BSA_Spaghetti"
+output: html_document
+date: "2026-03-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r data}
+week1 = 
+```
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+
+########Simple 
+
+# Step 1: Define players by nflId
+rushers_of_interest <- c(44813, 47889, 47785) 
+
+# Step 2: Get snap frame IDs
+snap_frames <- week7 %>%
+  filter(event == "ball_snap") %>%
+  select(gameId, playId, snap_frame = frameId)
+
+# Step 3: Get QB positions at snap
+qb_snap <- week7 %>%
+  filter(event == "ball_snap", officialPosition == "QB") %>%
+  select(gameId, playId, qb_x = x, qb_y = y)
+
+# Step 4: Build rusher paths
+rusher_paths <- week7 %>%
+  filter(nflId %in% rushers_of_interest) %>%
+  left_join(snap_frames, by = c("gameId", "playId")) %>%
+  left_join(qb_snap, by = c("gameId", "playId")) %>%
+  filter(frameId >= snap_frame) %>%
+  mutate(
+    frame_rel  = frameId - snap_frame,
+    rel_x      = x - qb_x,
+    rel_y      = y - qb_y,
+    play_id_key = paste(gameId, playId, nflId, sep = "_")
+  )
+
+# Step 5: Average path per player
+avg_path <- rusher_paths %>%
+  group_by(nflId, frame_rel) %>%
+  summarise(
+    avg_rel_x = mean(rel_x, na.rm = TRUE),
+    avg_rel_y = mean(rel_y, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Step 6: Plot
+ggplot(rusher_paths, aes(x = rel_x, y = rel_y, group = play_id_key)) +
+  geom_path(alpha = 0.2, linewidth = 0.4, color = "steelblue") +
+  geom_path(
+    data = avg_path,
+    aes(x = avg_rel_x, y = avg_rel_y, group = nflId),
+    color = "white", linewidth = 1.2, linetype = "dashed",
+    inherit.aes = FALSE
+  ) +
+  geom_point(aes(x = 0, y = 0), color = "yellow",
+             size = 4, shape = 4, stroke = 1.5,
+             inherit.aes = FALSE) +
+  facet_wrap(~ nflId) +
+  labs(
+    title = "Pass Rush Trajectories Relative to QB",
+    subtitle = "Dashed white line = average path | X = QB position at snap",
+    x = "Horizontal Distance from QB (yards)",
+    y = "Depth from QB (yards)"
+  ) +
+  coord_fixed() +
+  theme_dark() +
+  theme(
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+
+# Step 1: Define players by nflId
+rushers_of_interest <- c(44813, 47889, 47785)  
+
+# Step 2: Get snap frame IDs
+snap_frames <- week7 %>%
+  filter(event == "ball_snap") %>%
+  select(gameId, playId, snap_frame = frameId)
+
+# Step 3: Get QB positions at snap
+qb_snap <- week7 %>%
+  filter(event == "ball_snap", officialPosition == "QB") %>%
+  select(gameId, playId, qb_x = x, qb_y = y)
+
+# Step 4: Derive pressure from events in week7
+pressure_plays <- pffScouting %>%
+  filter(event %in% c("pff_hit", "pff_sack", "pff_hurry")) %>%
+  distinct(gameId, playId) %>%
+  mutate(pressure = 1)
+
+# Step 5: Build rusher paths
+rusher_paths <- week7 %>%
+  filter(nflId %in% rushers_of_interest) %>%
+  left_join(snap_frames, by = c("gameId", "playId")) %>%
+  left_join(qb_snap, by = c("gameId", "playId")) %>%
+  left_join(pressure_plays, by = c("gameId", "playId")) %>%
+  mutate(pressure = replace_na(pressure, 0)) %>%
+  filter(frameId >= snap_frame) %>%
+  mutate(
+    frame_rel   = frameId - snap_frame,
+    rel_x       = x - qb_x,
+    rel_y       = y - qb_y,
+    play_id_key = paste(gameId, playId, nflId, sep = "_"),
+    outcome     = ifelse(pressure == 1, "Pressure", "No Pressure")
+  )
+
+# Step 6: Average path per player
+avg_path <- rusher_paths %>%
+  group_by(nflId, frame_rel) %>%
+  summarise(
+    avg_rel_x = mean(rel_x, na.rm = TRUE),
+    avg_rel_y = mean(rel_y, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Step 7: Plot
+ggplot(rusher_paths, aes(x = rel_x, y = rel_y, group = play_id_key, color = outcome)) +
+  geom_path(alpha = 0.25, linewidth = 0.4) +
+  geom_path(
+    data = avg_path,
+    aes(x = avg_rel_x, y = avg_rel_y, group = nflId),
+    color = "white", linewidth = 1.2, linetype = "dashed",
+    inherit.aes = FALSE
+  ) +
+  geom_point(
+    aes(x = 0, y = 0), color = "yellow",
+    size = 4, shape = 4, stroke = 1.5,
+    inherit.aes = FALSE
+  ) +
+  scale_color_manual(values = c("Pressure" = "red", "No Pressure" = "blue")) +
+  facet_wrap(~ nflId) +
+  labs(
+    title = "Pass Rush Trajectories Relative to QB",
+    subtitle = "Dashed white line = average path | X = QB position at snap",
+    x = "Horizontal Distance from QB (yards)",
+    y = "Depth from QB (yards)",
+    color = "Outcome"
+  ) +
+  coord_fixed() +
+  theme_dark() +
+  theme(
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r}
+setwd("/Users/mateoshelton/Desktop/BSA")
+plays = read.csv("plays.csv")
+names(plays)
+
+week7small = week7[1:100, ]
+print(week7small)
+write.csv(week7small, "week7small.csv", row.names = F)
+View(week7small)
+
+week78 = merge(week7, week8)
+```
+
+```{r chunk}
+library(tidyverse)
+library(ggplot2)
+
+# ============================================================
+#  CHANGE THESE to the nflIds you want to focus on
+# ============================================================
+rushers_of_interest <- c(44813, 47889, 47785)   # swap in any nflIds
+# ============================================================
+
+# Step 1: Get pass rusher nflIds from scouting data
+pass_rushers <- pffScouting %>%
+  filter(pff_role == "Pass Rush") %>%
+  select(gameId, playId, nflId, pff_hit, pff_hurry, pff_sack) %>%
+  distinct()
+
+# Step 2: Derive pressure from scouting columns
+pressure_plays <- pass_rushers %>%
+  group_by(gameId, playId) %>%
+  summarise(
+    pressure = as.integer(any(pff_hit == 1 | pff_hurry == 1 | pff_sack == 1, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+# Step 3: Get snap frames
+snap_frames <- week7 %>%
+  filter(event == "ball_snap") %>%
+  select(gameId, playId, snap_frame = frameId)
+
+# Step 4: Get QB position at snap
+qb_snap <- week7 %>%
+  filter(event == "ball_snap", officialPosition == "QB") %>%
+  select(gameId, playId, qb_x = x, qb_y = y)
+
+# Step 5: Build rusher paths — filtered to only your players of interest
+rusher_paths <- week7 %>%
+  filter(nflId %in% rushers_of_interest) %>%
+  left_join(snap_frames,    by = c("gameId", "playId")) %>%
+  left_join(qb_snap,        by = c("gameId", "playId")) %>%
+  left_join(pressure_plays, by = c("gameId", "playId")) %>%
+  mutate(pressure = replace_na(pressure, 0)) %>%
+  filter(frameId >= snap_frame) %>%
+  mutate(
+    frame_rel = frameId - snap_frame,
+    rel_x = x - qb_x,
+    rel_y = y - qb_y,
+    rel_x = ifelse(playDirection == "left", -rel_x, rel_x),
+    rel_y = ifelse(playDirection == "left", -rel_y, rel_y),
+    play_id_key = paste(gameId, playId, nflId, sep = "_"),
+    outcome = ifelse(pressure == 1, "Pressure", "No Pressure")
+  )
+
+rusher_paths <- rusher_paths %>%
+  left_join(players %>% select(nflId, displayName), by = "nflId")
+
+# Step 6: Average path per rusher
+avg_path <- rusher_paths %>%
+  group_by(nflId, frame_rel) %>%
+  summarise(
+    avg_rel_x = mean(rel_x, na.rm = TRUE),
+    avg_rel_y = mean(rel_y, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+avg_path <- avg_path %>%
+  left_join(players %>% select(nflId, displayName), by = "nflId")
+
+# Step 7: Plot
+ggplot(rusher_paths, aes(x = rel_y, y = rel_x, group = play_id_key, color = outcome)) +
+  geom_path(alpha = 0.25, linewidth = 1.2) +
+  geom_path(
+    data = avg_path,
+    aes(x = avg_rel_y, y = avg_rel_x, group = factor(nflId)),
+    color = "white", linewidth = 1.2, linetype = "dashed",
+    inherit.aes = FALSE
+  ) +
+  geom_point(
+    aes(x = 0, y = 0), color = "yellow",
+    size = 4, shape = 4, stroke = 1.5,
+    inherit.aes = FALSE
+  ) +
+  scale_color_manual(values = c("Pressure" = "#E74C3C", "No Pressure" = "#3498DB")) +
+  facet_wrap(~ displayName) +
+  labs(
+    title = "Pass Rush Trajectories Relative to QB, Week 7",
+    subtitle = "Dashed white line = average path | X = QB position at snap",
+    x = "Horizontal Distance from QB (yards)",
+    y = "Depth from QB (yards)",
+    color = "Outcome"
+  ) +
+  coord_fixed() +
+  theme_dark() +
+  theme(
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+
+
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+
+rushers_of_interest <- c(44813, 47889, 47785)  
+
+# Step 1: Get pass rusher nflIds from scouting data
+pass_rushers <- pffScouting %>%
+  filter(pff_role == "Pass Rush") %>%
+  select(gameId, playId, nflId, pff_hit, pff_hurry, pff_sack) %>%
+  distinct()
+
+# Step 2: Derive pressure from scouting columns
+pressure_plays <- pass_rushers %>%
+  group_by(gameId, playId) %>%
+  summarise(
+    pressure = as.integer(any(pff_hit == 1 | pff_hurry == 1 | pff_sack == 1, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+# Step 3: Get snap frames
+snap_frames <- week7 %>%
+  filter(event == "ball_snap") %>%
+  select(gameId, playId, snap_frame = frameId)
+
+# Step 4: Get QB position at snap
+qb_snap <- week7 %>%
+  filter(event == "ball_snap", officialPosition == "QB") %>%
+  select(gameId, playId, qb_x = x, qb_y = y)
+
+# Step 5: Define end of pass rush window
+# Ends at whichever comes first:
+# - QB releases ball (pass_forward, qb_spike)
+# - QB gets sacked (sack)
+# - QB leaves pocket (qb_scramble)
+# - 3 second max (30 frames at 10fps)
+end_events <- c("pass_forward", "autoevent_passforward", "pass_arrived", "qb_sack", "autoevent_passinterrupted", "pass_tipped", "qb_strip_sack", "pass_outcome_caught")
+
+end_frames <- week7 %>%
+  filter(event %in% end_events) %>%
+  group_by(gameId, playId) %>%
+  summarise(end_frame = min(frameId), .groups = "drop")  # take earliest end event
+
+# Step 6: Build rusher paths with window applied
+rusher_paths <- week7 %>%
+  filter(nflId %in% rushers_of_interest) %>%
+  left_join(snap_frames,    by = c("gameId", "playId")) %>%
+  left_join(end_frames,     by = c("gameId", "playId")) %>%
+  left_join(qb_snap,        by = c("gameId", "playId")) %>%
+  left_join(pressure_plays, by = c("gameId", "playId")) %>%
+  mutate(
+    pressure  = replace_na(pressure, 0),
+    # Cap end frame at 30 frames (3 seconds) past snap
+    end_frame = pmin(end_frame, snap_frame + 30, na.rm = TRUE)
+  ) %>%
+  # Apply the window: only frames between snap and end event
+  filter(frameId >= snap_frame, frameId <= end_frame) %>%
+  mutate(
+    frame_rel   = frameId - snap_frame,
+    rel_x       = x - qb_x,
+    rel_y       = y - qb_y,
+    rel_x       = ifelse(playDirection == "left", -rel_x, rel_x),
+    rel_y       = ifelse(playDirection == "left", -rel_y, rel_y),
+    play_id_key = paste(gameId, playId, nflId, sep = "_"),
+    outcome     = ifelse(pressure == 1, "Pressure", "No Pressure")
+  )
+
+ rusher_paths <- rusher_paths %>%
+  left_join(players %>% select(nflId, displayName), by = "nflId")
+
+# Step 7: Average path per rusher
+avg_path <- rusher_paths %>%
+  group_by(nflId, frame_rel) %>%
+  summarise(
+    avg_rel_x = mean(rel_x, na.rm = TRUE),
+    avg_rel_y = mean(rel_y, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+avg_path <- avg_path %>%
+  left_join(players %>% select(nflId, displayName), by = "nflId")
+
+rusher_starts <- rusher_paths %>%
+  filter(frame_rel == 0)
+
+# Step 8: Plot
+ggplot(rusher_paths, aes(x = rel_y, y = rel_x, group = play_id_key, color = outcome)) +
+  geom_path(alpha = 0.25, linewidth = 1.2) +
+  # Starting position marker
+  geom_point(
+    data = rusher_starts,
+    aes(x = rel_y, y = rel_x, color = outcome),
+    size = 2, shape = 21, fill = "white", stroke = 0.8,
+    inherit.aes = FALSE
+  ) +
+  # Average path
+  geom_path(
+    data = avg_path,
+    aes(x = avg_rel_y, y = avg_rel_x, group = factor(nflId)),
+    color = "white", linewidth = 1.2, linetype = "dashed",
+    inherit.aes = FALSE
+  ) +
+  # QB marker
+  geom_point(
+    aes(x = 0, y = 0), color = "yellow",
+    size = 4, shape = 4, stroke = 1.5,
+    inherit.aes = FALSE
+  ) +
+  scale_color_manual(values = c("Pressure" = "#E74C3C", "No Pressure" = "#3498DB")) +
+  facet_wrap(~ displayName) +
+  labs(
+    title = "Pass Rush Trajectories Relative to QB, Week 7",
+    subtitle = "Dashed white line = average path | X = QB | Circle = rusher start position",
+    x = "Horizontal Distance from QB (yards)",
+    y = "Depth from QB (yards)",
+    color = "Outcome"
+  ) +
+  coord_fixed() +
+  theme_dark() +
+  theme(
+    strip.text = element_text(face = "bold", size = 11),
+    legend.position = "bottom"
+  )
+```
+
+```{r}
+library(shiny)
+library(tidyverse)
+library(ggplot2)
+library(bslib)
+
+setwd("/Users/mateoshelton/Desktop/BSA")
+
+# ── LOAD DATA ─────────────────────────────────────────────────────────────────
+week1 <- read.csv("week1.csv")
+week2 <- read.csv("week2.csv")
+week3 <- read.csv("week3.csv")
+week4 <- read.csv("week4.csv")
+week5 <- read.csv("week5.csv")
+week6 <- read.csv("week6.csv")
+week7 <- read.csv("week7.csv")   # was missing — caused object error
+week8 <- read.csv("week8.csv")   # was missing — caused object error
+
+scouting <- read.csv("pffScoutingData.csv")
+players  <- read.csv("players.csv")
+
+# ── PRE-PROCESS ───────────────────────────────────────────────────────────────
+
+# Combine all weeks
+all_weeks <- bind_rows(
+  week1 %>% mutate(week = 1),
+  week2 %>% mutate(week = 2),
+  week3 %>% mutate(week = 3),
+  week4 %>% mutate(week = 4),
+  week5 %>% mutate(week = 5),
+  week6 %>% mutate(week = 6),
+  week7 %>% mutate(week = 7),
+  week8 %>% mutate(week = 8)
+)
+
+# Identify QBs from scouting — tracking has no officialPosition column
+qb_ids <- scouting %>%
+  filter(pff_positionLinedUp == "QB") %>%
+  distinct(nflId) %>%
+  pull(nflId)
+
+# Pressure lookup
+pressure_plays <- scouting %>%
+  filter(pff_role == "Pass Rush") %>%
+  group_by(gameId, playId) %>%
+  summarise(
+    pressure = as.integer(any(pff_hit == 1 | pff_hurry == 1 | pff_sack == 1, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+# Snap frames — handle both snap event label variants
+snap_frames <- all_weeks %>%
+  filter(event %in% c("ball_snap", "autoevent_ballsnap")) %>%
+  group_by(gameId, playId) %>%
+  summarise(snap_frame = min(frameId), .groups = "drop")
+
+# QB positions at snap — use qb_ids since no officialPosition column
+qb_snap <- all_weeks %>%
+  filter(event %in% c("ball_snap", "autoevent_ballsnap"), nflId %in% qb_ids) %>%
+  group_by(gameId, playId) %>%
+  slice_min(frameId, n = 1) %>%
+  ungroup() %>%
+  select(gameId, playId, qb_x = x, qb_y = y)
+
+# End of pass rush window — qb_sack is the correct label in this dataset
+end_events <- c(
+  "pass_forward", "autoevent_passforward",
+  "qb_sack", "qb_strip_sack",
+  "qb_scramble", "qb_spike"
+)
+
+end_frames <- all_weeks %>%
+  filter(event %in% end_events) %>%
+  group_by(gameId, playId) %>%
+  summarise(end_frame = min(frameId), .groups = "drop")
+
+# Pass rusher nflIds
+pass_rusher_ids <- scouting %>%
+  filter(pff_role == "Pass Rush") %>%
+  pull(nflId) %>%
+  unique()
+
+# Build rusher paths — join displayName cleanly from players
+all_rusher_paths <- all_weeks %>%
+  filter(nflId %in% pass_rusher_ids) %>%
+  left_join(snap_frames,    by = c("gameId", "playId")) %>%
+  left_join(end_frames,     by = c("gameId", "playId")) %>%
+  left_join(qb_snap,        by = c("gameId", "playId")) %>%
+  left_join(pressure_plays, by = c("gameId", "playId")) %>%
+  left_join(players %>% select(nflId, displayName), by = "nflId") %>%  # join name here
+  mutate(
+    pressure  = replace_na(pressure, 0),
+    end_frame = pmin(end_frame, snap_frame + 30, na.rm = TRUE)
+  ) %>%
+  filter(
+    !is.na(snap_frame),
+    !is.na(qb_x),
+    frameId >= snap_frame,
+    frameId <= end_frame
+  ) %>%
+  mutate(
+    frame_rel   = frameId - snap_frame,
+    rel_x       = x - qb_x,
+    rel_y       = y - qb_y,
+    rel_x       = ifelse(playDirection == "left", -rel_x, rel_x),
+    rel_y       = ifelse(playDirection == "left", -rel_y, rel_y),
+    play_id_key = paste(gameId, playId, nflId, sep = "_"),
+    outcome     = ifelse(pressure == 1, "Pressure", "No Pressure")
+  ) %>%
+  filter(abs(rel_x) <= 15, abs(rel_y) <= 15)
+
+# Player lookup for dropdown
+player_lookup <- all_rusher_paths %>%
+  distinct(nflId, displayName) %>%
+  mutate(label = ifelse(is.na(displayName), as.character(nflId), displayName)) %>%
+  arrange(label)
+
+max_frame <- max(all_rusher_paths$frame_rel, na.rm = TRUE)
+
+# ── UI ────────────────────────────────────────────────────────────────────────
+
+ui <- fluidPage(
+  theme = bs_theme(bootswatch = "morph"),
+
+  titlePanel("Pass Rush Trajectory Explorer"),
+
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,
+
+      selectizeInput(
+        inputId  = "selected_players",
+        label    = "Select Pass Rushers",
+        choices  = setNames(player_lookup$nflId, player_lookup$label),
+        multiple = TRUE,
+        selected = player_lookup$nflId[1:3],
+        options  = list(placeholder = "Search by name...")
+      ),
+
+      checkboxGroupInput(
+        inputId  = "selected_weeks",
+        label    = "Select Weeks",
+        choices  = sort(unique(all_rusher_paths$week)),
+        selected = sort(unique(all_rusher_paths$week))
+      ),
+
+      sliderInput(
+        inputId = "frame_slider",
+        label   = "Frame (relative to snap)",
+        min     = 0,
+        max     = max_frame,
+        value   = max_frame,
+        step    = 1,
+        animate = animationOptions(interval = 150, loop = FALSE)
+      ),
+
+      hr(),
+      helpText("Each line = one play."),
+      helpText("Hit ▶ on slider to animate.")
+    ),
+
+    mainPanel(
+      width = 9,
+      plotOutput("spaghetti_plot", height = "900px")
+    )
+  )
+)
+
+# ── SERVER ────────────────────────────────────────────────────────────────────
+
+server <- function(input, output, session) {
+
+  filtered_paths <- reactive({
+    req(input$selected_players, input$selected_weeks)
+
+    all_rusher_paths %>%
+      filter(
+        nflId     %in% as.integer(input$selected_players),
+        week      %in% as.integer(input$selected_weeks),
+        frame_rel <= input$frame_slider
+      )
+  })
+
+  filtered_avg <- reactive({
+    filtered_paths() %>%
+      group_by(nflId, displayName, frame_rel) %>%
+      summarise(
+        avg_rel_x = mean(rel_x, na.rm = TRUE),
+        avg_rel_y = mean(rel_y, na.rm = TRUE),
+        .groups = "drop"
+      )
+  })
+
+  rusher_starts <- reactive({
+    filtered_paths() %>% filter(frame_rel == 0)
+  })
+
+  output$spaghetti_plot <- renderPlot({
+
+    validate(
+      need(nrow(filtered_paths()) > 0, "No data found for selected players/weeks.")
+    )
+
+    ggplot(filtered_paths(),
+           aes(x = rel_x, y = rel_y, group = play_id_key, color = outcome)) +
+
+      geom_path(alpha = 0.25, linewidth = 1.0) +
+
+      geom_point(
+        data = rusher_starts(),
+        aes(x = rel_x, y = rel_y, color = outcome),
+        size = 2, shape = 21, fill = "white", stroke = 0.8,
+        inherit.aes = FALSE
+      ) +
+
+      geom_path(
+        data = filtered_avg(),
+        aes(x = avg_rel_x, y = avg_rel_y, group = factor(nflId)),
+        color = "white", linewidth = 1.3, linetype = "dashed",
+        inherit.aes = FALSE
+      ) +
+
+      geom_point(
+        aes(x = 0, y = 0),
+        color = "yellow", size = 4, shape = 4, stroke = 1.5,
+        inherit.aes = FALSE
+      ) +
+
+      scale_color_manual(values = c("Pressure" = "#E74C3C", "No Pressure" = "#3498DB")) +
+      facet_wrap(~ displayName) +
+      labs(
+        title    = paste0("Pass Rush Trajectories — Frame ", input$frame_slider,
+                          " (", round(input$frame_slider / 10, 1), "s post-snap)"),
+        subtitle = "Dashed white = avg path | X = QB | Circle = rusher start",
+        x        = "Horizontal Distance from QB (yards)",
+        y        = "Depth from QB (yards)",
+        color    = "Outcome"
+      ) +
+      coord_fixed() +
+      theme_dark() +
+      theme(
+        strip.text      = element_text(face = "bold", size = 11),
+        legend.position = "bottom",
+        plot.title      = element_text(face = "bold", size = 13)
+      )
+  })
+}
+
+# ── LAUNCH ────────────────────────────────────────────────────────────────────
+shinyApp(ui = ui, server = server)
+
+```
+
+
+```{r}
+library(shiny)
+library(tidyverse)
+library(ggplot2)
+library(bslib)
+
+setwd("/Users/mateoshelton/Desktop/BSA")
+
+# ── LOAD DATA ─────────────────────────────────────────────────────────────────
+week1 <- read.csv("week1.csv")
+week2 <- read.csv("week2.csv")
+week3 <- read.csv("week3.csv")
+week4 <- read.csv("week4.csv")
+week5 <- read.csv("week5.csv")
+week6 <- read.csv("week6.csv")
+week7 <- read.csv("week7.csv")   # was missing — caused object error
+week8 <- read.csv("week8.csv")   # was missing — caused object error
+
+scouting <- read.csv("pffScoutingData.csv")
+players  <- read.csv("players.csv")
+
+```
+
+
+```{r}
+# ── PRE-PROCESS ───────────────────────────────────────────────────────────────
+
+all_weeks <- bind_rows(
+  week1 %>% mutate(week = 1),
+  week2 %>% mutate(week = 2),
+  week3 %>% mutate(week = 3),
+  week4 %>% mutate(week = 4),
+  week5 %>% mutate(week = 5),
+  week6 %>% mutate(week = 6),
+  week7 %>% mutate(week = 7),
+  week8 %>% mutate(week = 8)
+)
+
+qb_ids <- scouting %>%
+  filter(pff_positionLinedUp == "QB") %>%
+  distinct(nflId) %>%
+  pull(nflId)
+
+designated_pass_rusher_ids <- players %>%
+  filter(officialPosition %in% c("DE", "DT", "OLB", "NT")) %>%
+  pull(nflId) %>%
+  unique()
+
+pressure_plays <- scouting %>%
+  filter(pff_role == "Pass Rush") %>%
+  group_by(gameId, playId) %>%
+  summarise(
+    pressure = as.integer(any(pff_hit == 1 | pff_hurry == 1 | pff_sack == 1, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+snap_frames <- all_weeks %>%
+  filter(event %in% c("ball_snap", "autoevent_ballsnap")) %>%
+  group_by(gameId, playId) %>%
+  summarise(snap_frame = min(frameId), .groups = "drop")
+
+qb_snap <- all_weeks %>%
+  filter(event %in% c("ball_snap", "autoevent_ballsnap"), nflId %in% qb_ids) %>%
+  group_by(gameId, playId) %>%
+  slice_min(frameId, n = 1) %>%
+  ungroup() %>%
+  select(gameId, playId, qb_x = x, qb_y = y)
+
+end_events <- c(
+  "pass_forward", "autoevent_passforward",
+  "qb_sack", "qb_strip_sack",
+  "qb_scramble", "qb_spike"
+)
+
+end_frames <- all_weeks %>%
+  filter(event %in% end_events) %>%
+  group_by(gameId, playId) %>%
+  summarise(end_frame = min(frameId), .groups = "drop")
+
+all_rusher_paths <- all_weeks %>%
+  filter(nflId %in% designated_pass_rusher_ids) %>%
+  filter(nflId %in% (scouting %>%
+           filter(pff_role == "Pass Rush") %>%
+           pull(nflId) %>% unique())) %>%
+  left_join(snap_frames,    by = c("gameId", "playId")) %>%
+  left_join(end_frames,     by = c("gameId", "playId")) %>%
+  left_join(qb_snap,        by = c("gameId", "playId")) %>%
+  left_join(pressure_plays, by = c("gameId", "playId")) %>%
+  left_join(players %>% select(nflId, displayName), by = "nflId") %>%
+  mutate(
+    pressure  = replace_na(pressure, 0),
+    end_frame = pmin(end_frame, snap_frame + 30, na.rm = TRUE)
+  ) %>%
+  filter(
+    !is.na(snap_frame),
+    !is.na(qb_x),
+    frameId >= snap_frame,
+    frameId <= end_frame
+  ) %>%
+  mutate(
+    frame_rel   = frameId - snap_frame,
+    rel_x       = x - qb_x,
+    rel_y       = y - qb_y,
+    rel_x       = ifelse(playDirection == "left", -rel_x, rel_x),
+    rel_y       = ifelse(playDirection == "left", -rel_y, rel_y),
+    play_id_key = paste(gameId, playId, nflId, sep = "_"),
+    outcome     = ifelse(pressure == 1, "Pressure", "No Pressure")
+  ) %>%
+  filter(abs(rel_x) <= 15, abs(rel_y) <= 15)
+
+player_lookup <- all_rusher_paths %>%
+  distinct(nflId, displayName) %>%
+  mutate(label = ifelse(is.na(displayName), as.character(nflId), displayName)) %>%
+  arrange(label)
+
+max_frame <- max(all_rusher_paths$frame_rel, na.rm = TRUE)
+
+```
+
+```{r}
+#UI 
+
+ui <- fluidPage(
+  theme = bs_theme(bootswatch = "darkly"),
+
+  # Custom CSS for 2x4 week checkbox grid and bulleted help text
+tags$style(HTML("
+  .week-grid .shiny-options-group {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+  }
+  .help-bullets {
+    padding-left: 18px;
+    font-size: 0.85em;
+    color: #555;
+  }
+  .help-bullets li {
+    margin-bottom: 4px;
+  }
+  /* Prevents grey flash during re-render */
+  .recalculating {
+    opacity: 1 !important;
+  }
+")),
+
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,
+
+      selectizeInput(
+        inputId  = "selected_players",
+        label    = "Select Pass Rushers",
+        choices  = setNames(player_lookup$nflId, player_lookup$label),
+        multiple = TRUE,
+        selected = player_lookup$nflId[1:4],
+        options  = list(placeholder = "Search by name...")
+      ),
+
+      # Week checkboxes wrapped in div for 2x4 grid CSS
+      div(class = "week-grid",
+        checkboxGroupInput(
+          inputId  = "selected_weeks",
+          label    = "Select Weeks",
+          choices  = sort(unique(all_rusher_paths$week)),
+          selected = sort(unique(all_rusher_paths$week))
+        )
+      ),
+
+      sliderInput(
+        inputId = "frame_slider",
+        label   = "Frame (relative to snap)",
+        min     = 0,
+        max     = max_frame,
+        value   = max_frame,
+        step    = 1,
+        animate = animationOptions(interval = 150, loop = FALSE)
+      ),
+
+      hr(),
+
+      # Bulleted help text
+      tags$ul(class = "help-bullets",
+        tags$li("Each line = one play"),
+        tags$li("Dashed line = average path"),
+        tags$li("X = QB position at snap"),
+        tags$li("Circle = rusher start position"),
+        tags$li("Hit ▶ on slider to animate")
+      )
+    ),
+
+    mainPanel(
+      width = 9,
+      plotOutput("spaghetti_plot", height = "830px")
+    )
+  )
+)
+
+```
+
+```{r}
+#SERVER
+
+server <- function(input, output, session) {
+
+frame_val <- reactive({
+  input$frame_slider
+}) %>% throttle(150)   # only update every 150ms instead of every tick
+
+filtered_paths <- reactive({
+  req(input$selected_players, input$selected_weeks)
+
+  all_rusher_paths %>%
+    filter(
+      nflId     %in% as.integer(input$selected_players),
+      week      %in% as.integer(input$selected_weeks),
+      frame_rel <= frame_val()          # use throttled value here
+    )
+})
+
+  filtered_avg <- reactive({
+    filtered_paths() %>%
+      group_by(nflId, displayName, frame_rel) %>%
+      summarise(
+        avg_rel_x = mean(rel_x, na.rm = TRUE),
+        avg_rel_y = mean(rel_y, na.rm = TRUE),
+        .groups = "drop"
+      )
+  })
+
+  rusher_starts <- reactive({
+    filtered_paths() %>% filter(frame_rel == 0)
+  })
+
+  output$spaghetti_plot <- renderPlot({
+
+    validate(
+      need(nrow(filtered_paths()) > 0, "No data found for selected players/weeks.")
+    )
+
+    ggplot(filtered_paths(),
+           aes(x = -rel_y, y = rel_x,        # flipped 180 degrees from previous
+               group = play_id_key, color = outcome)) +
+
+      geom_path(alpha = 0.25, linewidth = 1.0) +
+
+      geom_point(
+        data = rusher_starts(),
+        aes(x = -rel_y, y = rel_x, color = outcome),
+        size = 2, shape = 21, fill = "white", stroke = 0.8,
+        inherit.aes = FALSE
+      ) +
+
+      geom_path(
+        data = filtered_avg(),
+        aes(x = -avg_rel_y, y = avg_rel_x, group = factor(nflId)),
+        color = "black", linewidth = 1.3, linetype = "dashed",
+        inherit.aes = FALSE
+      ) +
+
+      geom_point(
+        aes(x = 0, y = 0),
+        color = "green", size = 4, shape = 4, stroke = 1.5,
+        inherit.aes = FALSE
+      ) +
+
+      scale_color_manual(values = c("Pressure" = "#E74C3C", "No Pressure" = "#3498DB")) +
+      facet_wrap(~ displayName) +
+      labs(
+        title    = paste0("Pass Rush Trajectories — Frame ", input$frame_slider,
+                          " (", round(input$frame_slider / 10, 1), "s post-snap)"),
+        subtitle = "Dashed line = avg path | X = QB | Circle = rusher start",
+        x        = "Sideline Distance from QB (yards)",
+        y        = "Depth toward QB (yards)",
+        color    = "Outcome"
+      ) +
+      coord_fixed() +
+      theme_minimal() +
+      theme(
+        strip.text      = element_text(face = "bold", size = 14),
+        legend.position = "bottom",
+        plot.title      = element_text(face = "bold", size = 20, hjust = 0.5),
+        plot.subtitle   = element_text(hjust = 0.5)
+      )
+  }, res = 96)
+}
+```
+
+```{r}
+#LAUNCH
+shinyApp(ui = ui, server = server)
+```
+
