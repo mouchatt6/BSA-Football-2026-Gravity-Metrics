@@ -22,3 +22,9 @@ Data Cleaning + Engineering/outputs_csv/gravity_base.csv
 
 Data Cleaning + Engineering/outputs_csv/blocker_rusher_matchups.csv
 Data Cleaning + Engineering/outputs_csv/base_filtered.csv
+
+# GNN-V1 artifacts (regenerate locally; do not commit)
+gnn/cache/
+gnn/checkpoints/
+Data Cleaning + Engineering/outputs_csv/gnn_attention_scores.csv
+Data Cleaning + Engineering/outputs_csv/gnn_player_gravity.csv
