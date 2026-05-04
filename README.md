@@ -6,8 +6,6 @@ This repository supports Bruin Sports Analytics research on a pass rusher "gravi
 
 The current phase is data engineering and frame-level dataset construction for downstream modeling.
 
-> **Branch `GNN-V1`** adds a Graph Neural Network for *expected* attention. See [`Data Cleaning + Engineering/gnn/README.md`](Data%20Cleaning%20%2B%20Engineering/gnn/README.md) for the full plan, install instructions, and notebook entrypoint, plus `requirements.txt` / `environment.yml` at the repo root.
-
 ## Project Structure
 
 ```text
