@@ -1,0 +1,25 @@
+name: bsa-gravity-gnn
+channels:
+  - pyg
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy>=1.24
+  - pandas>=2.0
+  - scipy>=1.10
+  - matplotlib>=3.7
+  - seaborn>=0.13
+  - scikit-learn>=1.3
+  - jupyterlab>=4.0
+  - ipykernel>=6.25
+  - ipywidgets>=8.0
+  - tqdm>=4.66
+  - pytorch>=2.1,<2.4
+  - cpuonly  # remove and add `pytorch-cuda=12.1` (or your version) for GPU
+  - pyg=2.5
+  - pip
+  - pip:
+      - xgboost>=2.0
+      - lightgbm>=4.1
