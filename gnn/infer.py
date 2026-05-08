@@ -79,7 +79,7 @@ def run_inference_and_write(
     data_list: Sequence,
     play_attention: pd.DataFrame,
     rusher_position_lookup: Optional[Dict[int, str]] = None,
-    device: str = "cpu",
+    device: str = "auto",
     batch_size: int = 256,
     min_plays: int = 25,
 ):

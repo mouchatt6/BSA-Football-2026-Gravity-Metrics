@@ -12,11 +12,13 @@ from typing import Dict, List, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from .config import pick_device
+
 
 def predict_play_rusher(
     model,
     data_list: Sequence,
-    device: str = "cpu",
+    device: str = "auto",
     batch_size: int = 256,
 ) -> pd.DataFrame:
     """Run the model on every graph and aggregate to play-rusher level.
@@ -29,7 +31,8 @@ def predict_play_rusher(
     import torch
     from torch_geometric.loader import DataLoader
 
-    model = model.to(device)
+    resolved = pick_device(device)
+    model = model.to(resolved)
     model.eval()
     loader = DataLoader(list(data_list), batch_size=batch_size, shuffle=False)
 
@@ -38,7 +41,7 @@ def predict_play_rusher(
 
     with torch.no_grad():
         for batch in loader:
-            batch = batch.to(device)
+            batch = batch.to(resolved)
             pred = model(batch).detach().cpu().numpy()
             mask = batch.rusher_mask.detach().cpu().numpy().astype(bool)
             y = batch.y.detach().cpu().numpy()

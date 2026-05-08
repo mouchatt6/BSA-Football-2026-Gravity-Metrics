@@ -28,7 +28,9 @@ def main():
     parser.add_argument("--model", choices=["graphsage", "gatv2"], default="graphsage")
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--batch-size", type=int, default=128)
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--device", default="auto",
+                        choices=["auto", "cuda", "mps", "cpu"],
+                        help="auto = pick best available (cuda > mps > cpu)")
     parser.add_argument("--cache", default="frame_graphs.pkl")
     parser.add_argument("--no-cache", action="store_true")
     args = parser.parse_args()

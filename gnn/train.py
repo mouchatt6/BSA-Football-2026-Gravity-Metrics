@@ -13,7 +13,7 @@ from typing import List, Optional, Sequence
 
 import numpy as np
 
-from .config import CHECKPOINT_DIR, TrainConfig
+from .config import CHECKPOINT_DIR, TrainConfig, pick_device
 
 
 @dataclass
@@ -45,7 +45,9 @@ def train_model(
     import torch
     from torch_geometric.loader import DataLoader
 
-    device = torch.device(cfg.device)
+    resolved = pick_device(cfg.device)
+    device = torch.device(resolved)
+    print(f"[train] using device: {resolved}")
     model = model.to(device)
 
     train_loader = DataLoader(list(train_data), batch_size=cfg.batch_size, shuffle=True)

@@ -59,6 +59,52 @@ MIN_WINDOW_LENGTH: int = 5  # minimum number of frames after lower bound
 FRAMES_PER_PLAY: int = 6  # evenly spaced frames per play to bound graph count
 
 
+def pick_device(preferred: str = "auto") -> str:
+    """Return the best torch device string available on this machine.
+
+    `preferred` can be "auto", "cuda", "mps", or "cpu". If a non-auto choice
+    is unavailable on this machine (e.g. "cuda" on a Mac without NVIDIA
+    drivers, or "mps" on Linux), we fall back to the next best option and
+    emit a one-line note so the caller knows what they got.
+
+    Order of preference for "auto":  cuda -> mps (Apple Silicon) -> cpu.
+    """
+    try:
+        import torch
+    except ImportError:
+        return "cpu"
+
+    cuda_ok = torch.cuda.is_available()
+    mps_ok = (
+        getattr(torch.backends, "mps", None) is not None
+        and torch.backends.mps.is_available()
+        and torch.backends.mps.is_built()
+    )
+
+    requested = (preferred or "auto").lower()
+    if requested == "cuda":
+        if cuda_ok:
+            return "cuda"
+        fallback = "mps" if mps_ok else "cpu"
+        print(f"[pick_device] CUDA not available on this build; using {fallback}.")
+        return fallback
+    if requested == "mps":
+        if mps_ok:
+            return "mps"
+        fallback = "cuda" if cuda_ok else "cpu"
+        print(f"[pick_device] MPS not available; using {fallback}.")
+        return fallback
+    if requested == "cpu":
+        return "cpu"
+
+    # auto
+    if cuda_ok:
+        return "cuda"
+    if mps_ok:
+        return "mps"
+    return "cpu"
+
+
 @dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 25
@@ -71,7 +117,7 @@ class TrainConfig:
     val_fraction: float = 0.15
     test_fraction: float = 0.15
     seed: int = 42
-    device: str = "cpu"  # "cuda" if available; user can override
+    device: str = "auto"  # auto-detect cuda / mps / cpu
     early_stopping_patience: int = 5
 
 
