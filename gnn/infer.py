@@ -41,11 +41,25 @@ def write_play_rusher_predictions(
     return df
 
 
+def _auto_min_plays(plays_per_rusher: pd.Series) -> int:
+    """Pick a sensible min_plays threshold based on the empirical distribution.
+
+    Strategy: aim to retain roughly the top ~75% of rushers by play count,
+    bounded between [3, 25]. With the full ~7.4K play dataset this lands near
+    25; with a small subsample (e.g. MAX_PLAYS=400) it adapts down to ~3-5.
+    """
+    if plays_per_rusher.empty:
+        return 1
+    p25 = float(plays_per_rusher.quantile(0.25))
+    return int(max(3, min(25, round(p25))))
+
+
 def write_player_gravity(
     play_rusher_df: pd.DataFrame,
     rusher_position_lookup: Optional[Dict[int, str]] = None,
-    min_plays: int = 25,
+    min_plays = "auto",
     output_path = GNN_PLAYER_GRAVITY_CSV,
+    verbose: bool = True,
 ) -> pd.DataFrame:
     df = play_rusher_df.copy()
     grouped = df.groupby(["rusher_nflId", "rusher_name"]).agg(
@@ -56,7 +70,31 @@ def write_player_gravity(
         std_gravity=("gravity_gnn", "std"),
     ).reset_index()
 
-    qualified = grouped[grouped["plays"] >= min_plays].copy()
+    if min_plays == "auto":
+        threshold = _auto_min_plays(grouped["plays"])
+    else:
+        threshold = int(min_plays)
+
+    qualified = grouped[grouped["plays"] >= threshold].copy()
+
+    # Adaptive fallback: if the requested threshold filters everyone, lower it
+    # (with a one-line note) so callers always get a non-empty rollup when at
+    # least one rusher exists.
+    if qualified.empty and not grouped.empty:
+        new_threshold = max(1, int(grouped["plays"].max()))
+        if verbose:
+            print(f"[write_player_gravity] min_plays={threshold} produced 0 qualified rushers; "
+                  f"falling back to min_plays={new_threshold} (the max plays/rusher in the sample). "
+                  f"Increase MAX_PLAYS or pass an explicit min_plays for a stricter cut.")
+        threshold = new_threshold
+        qualified = grouped[grouped["plays"] >= threshold].copy()
+
+    if verbose:
+        print(f"[write_player_gravity] {len(grouped)} unique rushers, "
+              f"plays/rusher: median={grouped['plays'].median():.0f} "
+              f"max={grouped['plays'].max()} min={grouped['plays'].min()} | "
+              f"min_plays={threshold} -> {len(qualified)} qualified")
+
     if not qualified.empty:
         mu = qualified["mean_gravity"].mean()
         sd = qualified["mean_gravity"].std(ddof=0)
@@ -81,7 +119,7 @@ def run_inference_and_write(
     rusher_position_lookup: Optional[Dict[int, str]] = None,
     device: str = "auto",
     batch_size: int = 256,
-    min_plays: int = 25,
+    min_plays = "auto",
 ):
     pred_df = predict_play_rusher(model, data_list, device=device, batch_size=batch_size)
     play_rusher = write_play_rusher_predictions(pred_df, play_attention)
