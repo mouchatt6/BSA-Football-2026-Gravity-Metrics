@@ -39,6 +39,19 @@ def predict_play_rusher(
     bucket: Dict[Tuple[int, int, int], List[float]] = defaultdict(list)
     target_bucket: Dict[Tuple[int, int, int], List[float]] = defaultdict(list)
 
+    def _per_graph_ints(attr, num_graphs: int) -> List[int]:
+        """Robustly unpack a PyG-batched per-graph scalar attribute to a list of
+        length ``num_graphs``. PyG's Batch collator may turn Python-int per-graph
+        attributes into a 1-D tensor, a Python list, or a single scalar (single
+        graph in batch). We normalize all three."""
+        if isinstance(attr, torch.Tensor):
+            if attr.dim() == 0:
+                return [int(attr.item())] * num_graphs
+            return [int(v) for v in attr.tolist()]
+        if isinstance(attr, (list, tuple)):
+            return [int(v) for v in attr]
+        return [int(attr)] * num_graphs
+
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(resolved)
@@ -48,12 +61,13 @@ def predict_play_rusher(
             nfl_id = batch.nfl_id.detach().cpu().numpy()
             graph_idx = batch.batch.detach().cpu().numpy()
 
-            game_ids = batch.game_id if isinstance(batch.game_id, list) else [batch.game_id]
-            play_ids = batch.play_id if isinstance(batch.play_id, list) else [batch.play_id]
+            n_graphs = int(batch.num_graphs)
+            game_ids = _per_graph_ints(batch.game_id, n_graphs)
+            play_ids = _per_graph_ints(batch.play_id, n_graphs)
 
             for n_idx in np.where(mask)[0]:
                 g = int(graph_idx[n_idx])
-                key = (int(game_ids[g]), int(play_ids[g]), int(nfl_id[n_idx]))
+                key = (game_ids[g], play_ids[g], int(nfl_id[n_idx]))
                 bucket[key].append(float(pred[n_idx]))
                 target_bucket[key].append(float(y[n_idx]))
 
