@@ -529,14 +529,13 @@ ui <- fluidPage(
     sidebarPanel(
       width = 3,
 
-      selectizeInput(
-        inputId  = "selected_players",
-        label    = "Select Pass Rushers",
-        choices  = setNames(player_lookup$nflId, player_lookup$label),
-        multiple = TRUE,
-        selected = player_lookup$nflId[1:3],
-        options  = list(placeholder = "Search by name...")
+      textInput(
+        inputId     = "player_search",
+        label       = "Search Pass Rushers",
+        placeholder = "Type a name...",
+        width       = "100%"
       ),
+        uiOutput("player_checkboxes"),
 
       checkboxGroupInput(
         inputId  = "selected_weeks",
@@ -590,6 +589,24 @@ server <- function(input, output, session) {
         avg_rel_y = mean(rel_y, na.rm = TRUE),
         .groups = "drop"
       )
+  })
+  
+  filtered_player_list <- reactive({
+    search <- trimws(input$player_search)
+    if (nchar(search) == 0) {
+      player_lookup
+    } else {
+      player_lookup %>% filter(grepl(search, label, ignore.case = TRUE))
+    }
+  })
+
+    output$player_checkboxes <- renderUI({
+      checkboxGroupInput(
+       inputId  = "selected_players",
+        label    = NULL,
+        choices  = setNames(filtered_player_list()$nflId, filtered_player_list()$label),
+       selected = isolate(input$selected_players)
+    )
   })
 
   rusher_starts <- reactive({
@@ -853,6 +870,7 @@ tags$style(HTML("
 
 ```
 
+
 ```{r}
 #SERVER
 
@@ -944,5 +962,452 @@ filtered_paths <- reactive({
 ```{r}
 #LAUNCH
 shinyApp(ui = ui, server = server)
+```
+
+```{r}
+library(shiny)
+library(tidyverse)
+library(ggplot2)
+library(bslib)
+library(shinyWidgets)
+
+setwd("/Users/mateoshelton/Desktop/BSA")
+
+# ── LOAD DATA ─────────────────────────────────────────────────────────────────
+week1 <- read.csv("week1.csv")
+week2 <- read.csv("week2.csv")
+week3 <- read.csv("week3.csv")
+week4 <- read.csv("week4.csv")
+week5 <- read.csv("week5.csv")
+week6 <- read.csv("week6.csv")
+week7 <- read.csv("week7.csv")
+week8 <- read.csv("week8.csv")
+
+scouting <- read.csv("pffScoutingData.csv")
+players  <- read.csv("players.csv")
+plays    <- read.csv("plays.csv")       # needed for down and quarter
+
+# ── PRE-PROCESS ───────────────────────────────────────────────────────────────
+
+all_weeks <- bind_rows(
+  week1 %>% mutate(week = 1),
+  week2 %>% mutate(week = 2),
+  week3 %>% mutate(week = 3),
+  week4 %>% mutate(week = 4),
+  week5 %>% mutate(week = 5),
+  week6 %>% mutate(week = 6),
+  week7 %>% mutate(week = 7),
+  week8 %>% mutate(week = 8)
+)
+
+qb_ids <- scouting %>%
+  filter(pff_positionLinedUp == "QB") %>%
+  distinct(nflId) %>%
+  pull(nflId)
+
+designated_pass_rusher_ids <- players %>%
+  filter(officialPosition %in% c("DE", "DT", "OLB", "NT")) %>%
+  pull(nflId) %>%
+  unique()
+
+# Pressure lookup
+pressure_plays <- scouting %>%
+  filter(pff_role == "Pass Rush") %>%
+  group_by(gameId, playId) %>%
+  summarise(
+    pressure = as.integer(any(pff_hit == 1 | pff_hurry == 1 | pff_sack == 1, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+double_team_plays <- scouting %>%
+  filter(pff_role == "Pass Block", !is.na(pff_nflIdBlockedPlayer)) %>%
+  group_by(gameId, playId, pff_nflIdBlockedPlayer) %>%
+  summarise(blockers_assigned = n(), .groups = "drop") %>%
+  rename(nflId = pff_nflIdBlockedPlayer) %>%
+  mutate(double_teamed = blockers_assigned >= 2)
+
+# Play result lookup — derived from tracking events
+play_results <- all_weeks %>%
+  filter(event %in% c(
+    "pass_outcome_incomplete", "qb_sack",
+    "qb_strip_sack", "qb_hit"
+  )) %>%
+  group_by(gameId, playId) %>%
+  summarise(
+    play_result = case_when(
+      any(event %in% c("qb_sack", "qb_strip_sack")) ~ "Sack",
+      any(event == "qb_hit")                         ~ "QB Hit",
+      any(event == "pass_outcome_incomplete")        ~ "Incomplete Pass",
+      TRUE                                           ~ "Other"
+    ),
+    .groups = "drop"
+  )
+
+# Down and quarter from plays.csv
+play_context <- plays %>%
+  select(gameId, playId, down, quarter)
+
+# Snap frames
+snap_frames <- all_weeks %>%
+  filter(event %in% c("ball_snap", "autoevent_ballsnap")) %>%
+  group_by(gameId, playId) %>%
+  summarise(snap_frame = min(frameId), .groups = "drop")
+
+# QB positions at snap
+qb_snap <- all_weeks %>%
+  filter(event %in% c("ball_snap", "autoevent_ballsnap"), nflId %in% qb_ids) %>%
+  group_by(gameId, playId) %>%
+  slice_min(frameId, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  left_join(players %>% select(nflId, displayName), by = "nflId") %>%
+  select(gameId, playId, qb_x = x, qb_y = y, qb_name = displayName)
+
+# End of pass rush window
+end_events <- c(
+  "pass_forward", "autoevent_passforward",
+  "qb_sack", "qb_strip_sack",
+  "qb_scramble", "qb_spike"
+)
+
+end_frames <- all_weeks %>%
+  filter(event %in% end_events) %>%
+  group_by(gameId, playId) %>%
+  summarise(end_frame = min(frameId), .groups = "drop")
+
+# Build rusher paths
+all_rusher_paths <- all_weeks %>%
+  filter(nflId %in% designated_pass_rusher_ids) %>%
+  filter(nflId %in% (scouting %>%
+           filter(pff_role == "Pass Rush") %>%
+           pull(nflId) %>% unique())) %>%
+  left_join(snap_frames,    by = c("gameId", "playId")) %>%
+  left_join(end_frames,     by = c("gameId", "playId")) %>%
+  left_join(qb_snap,        by = c("gameId", "playId")) %>%
+  left_join(pressure_plays, by = c("gameId", "playId")) %>%
+  left_join(play_results,   by = c("gameId", "playId")) %>%
+  left_join(play_context,   by = c("gameId", "playId")) %>%
+  left_join(players %>% select(nflId, displayName), by = "nflId") %>%
+  left_join(double_team_plays %>% select(gameId, playId, nflId, double_teamed),
+          by = c("gameId", "playId", "nflId")) %>%
+mutate(
+  double_teamed = coalesce(double_teamed, FALSE),
+  pressure      = coalesce(as.integer(pressure), 0L),
+  end_frame     = pmin(end_frame, snap_frame + 30, na.rm = TRUE),
+  play_result   = coalesce(play_result, "Other")
+) %>%
+  filter(
+    !is.na(snap_frame),
+    !is.na(qb_x),
+    frameId >= snap_frame,
+    frameId <= end_frame
+  ) %>%
+  mutate(
+    frame_rel   = frameId - snap_frame,
+    rel_x       = x - qb_x,
+    rel_y       = y - qb_y,
+    rel_x       = ifelse(playDirection == "left", -rel_x, rel_x),
+    rel_y       = ifelse(playDirection == "left", -rel_y, rel_y),
+    play_id_key = paste(gameId, playId, nflId, sep = "_"),
+    outcome = case_when(
+      pressure == 1                      ~ "Pressure",
+      double_teamed == TRUE              ~ "Double-Teamed",
+      TRUE                               ~ "No Pressure"
+    )
+  ) %>%
+  filter(abs(rel_x) <= 15, abs(rel_y) <= 15)
+
+player_lookup <- all_rusher_paths %>%
+  distinct(nflId, displayName) %>%
+  mutate(label = ifelse(is.na(displayName), as.character(nflId), displayName)) %>%
+  arrange(label)
+
+max_frame <- max(all_rusher_paths$frame_rel, na.rm = TRUE)
+
+```
+
+```{r}
+
+# ── UI ────────────────────────────────────────────────────────────────────────
+
+ui <- fluidPage(
+  theme = bs_theme(bootswatch = "darkly"),   # ← back to here
+
+  tags$style(HTML("
+    .week-grid .shiny-options-group {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px;
+    }
+    .filter-grid .shiny-options-group {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px;
+    }
+    .help-bullets {
+      padding-left: 18px;
+      font-size: 0.85em;
+      color: #aaa;
+    }
+    .help-bullets li {
+      margin-bottom: 4px;
+    }
+    .recalculating {
+      opacity: 1 !important;
+    }
+    background-color: #1C1C1C !important;
+  }
+  ")),
+
+  titlePanel(
+    div("Pass Rush Trajectory Explorer",
+        style = "text-align: center;")
+  ),
+
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,
+
+     pickerInput(
+      inputId  = "selected_players",
+      label    = "Select Pass Rushers",
+      choices  = setNames(player_lookup$nflId, player_lookup$label),
+      selected = player_lookup$nflId[1:4],
+      multiple = TRUE,
+      options  = pickerOptions(
+        actionsBox        = TRUE,
+        liveSearch        = TRUE,
+        liveSearchPlaceholder = "Type a name...",
+        selectedTextFormat = "count > 1",
+        countSelectedText  = "{0} rushers selected",
+        size              = 8
+      )
+    ),
+
+      hr(),
+      
+      #Frame Slider
+      sliderInput(
+        inputId = "frame_slider",
+        label   = "Frame (relative to snap)",
+        min     = 0,
+        max     = max_frame,
+        value   = max_frame,
+        step    = 1,
+        animate = animationOptions(interval = 625, loop = FALSE)
+      ),
+
+      hr(),
+
+      # Weeks — 2x4 grid
+      div(class = "week-grid",
+        checkboxGroupInput(
+          inputId  = "selected_weeks",
+          label    = "Weeks",
+          choices  = sort(unique(all_rusher_paths$week)),
+          selected = sort(unique(all_rusher_paths$week))
+        )
+      ),
+
+      hr(),
+
+      # Down — 2x2 grid
+      div(class = "filter-grid",
+        checkboxGroupInput(
+          inputId  = "selected_downs",
+          label    = "Down",
+          choices  = list("1st" = 1, "2nd" = 2, "3rd" = 3, "4th" = 4),
+          selected = c(1, 2, 3, 4)
+        )
+      ),
+
+      hr(),
+
+      # Quarter — 2x2 grid
+      div(class = "filter-grid",
+        checkboxGroupInput(
+          inputId  = "selected_quarters",
+          label    = "Quarter",
+          choices  = list("1st" = 1, "2nd" = 2, "3rd" = 3, "4th" = 4),
+          selected = c(1, 2, 3, 4)
+        )
+      ),
+
+      hr(),
+
+      # Pressure
+    checkboxGroupInput(
+      inputId  = "selected_outcome",
+      label    = "Outcome",
+      choices  = c("Pressure", "Double-Teamed", "No Pressure"),
+      selected = c("Pressure", "Double-Teamed", "No Pressure")
+  ),
+
+      hr(),
+
+      # Play result
+      checkboxGroupInput(
+        inputId  = "selected_result",
+        label    = "Play Result",
+        choices  = c("Incomplete Pass", "Sack", "QB Hit", "Other"),
+        selected = c("Incomplete Pass", "Sack", "QB Hit", "Other")
+      ),
+
+      hr(),
+
+      tags$ul(class = "help-bullets",
+        tags$li("Each line = one play"),
+        tags$li("Dashed white line = average path"),
+        tags$li("X = QB position at snap"),
+        tags$li("Circle = rusher start position"),
+        tags$li("Hit ▶ on slider to animate")
+      )
+    ),
+
+    mainPanel(
+      width = 9,
+      plotOutput("spaghetti_plot", height = "830px")
+    )
+  )
+)
+
+# ── SERVER ────────────────────────────────────────────────────────────────────
+
+server <- function(input, output, session) {
+
+  frame_val <- reactive({
+    input$frame_slider
+  }) %>% throttle(150)
+
+  filtered_paths <- reactive({
+    req(
+      input$selected_players,
+      input$selected_weeks,
+      input$selected_downs,
+      input$selected_quarters,
+      input$selected_outcome,
+      input$selected_result
+    )
+
+    all_rusher_paths %>%
+      filter(
+        nflId       %in% as.integer(input$selected_players),
+        week        %in% as.integer(input$selected_weeks),
+        down        %in% as.integer(input$selected_downs),
+        quarter     %in% as.integer(input$selected_quarters),
+        outcome     %in% input$selected_outcome,
+        play_result %in% input$selected_result,
+        frame_rel   <= frame_val()
+      )
+  })
+
+  filtered_avg <- reactive({
+    filtered_paths() %>%
+      group_by(nflId, displayName, frame_rel) %>%
+      summarise(
+        avg_rel_x = mean(rel_x, na.rm = TRUE),
+        avg_rel_y = mean(rel_y, na.rm = TRUE),
+        .groups = "drop"
+      )
+  })
+
+  rusher_starts <- reactive({
+    filtered_paths() %>% filter(frame_rel == 0)
+  })
+  
+  qb_label <- reactive({
+  filtered_paths() %>%
+    group_by(displayName) %>%
+    summarise(
+      qb_name = names(sort(table(qb_name), decreasing = TRUE))[1],
+      .groups = "drop"
+    )
+})
+
+  output$spaghetti_plot <- renderPlot({
+
+    validate(
+      need(nrow(filtered_paths()) > 0,
+           "No data found for selected filters.")
+    )
+
+    ggplot(filtered_paths(),
+           aes(x = -rel_y, y = rel_x,
+               group = play_id_key, color = outcome)) +
+
+      geom_path(alpha = 0.25, linewidth = 1.0) +
+
+      geom_point(
+        data = rusher_starts(),
+        aes(x = -rel_y, y = rel_x, color = outcome),
+        size = 2, shape = 21, fill = "white", stroke = 0.8,
+        inherit.aes = FALSE
+      ) +
+
+      geom_path(
+        data = filtered_avg(),
+        aes(x = -avg_rel_y, y = avg_rel_x, group = factor(nflId)),
+        color = "white", linewidth = 1.3, linetype = "dashed",
+        inherit.aes = FALSE
+      ) +
+
+      geom_point(
+        aes(x = 0, y = 0),
+        color = "gold", size = 4, shape = 4, stroke = 1.5,
+        inherit.aes = FALSE
+      ) +
+      
+      geom_text(
+        data  = qb_label(),
+        aes(x = 0, y = -1.4, label = qb_name),
+        color = "gold", size = 3, fontface = "italic",
+        inherit.aes = FALSE
+      ) +
+
+      scale_color_manual(
+        values = c(
+          "Pressure"      = "#E74C3C",
+          "Double-Teamed" = "#F39C12",
+          "No Pressure"   = "#3498DB"
+         )
+      ) +
+      facet_wrap(~ displayName) +
+      labs(
+        title    = paste0("Pass Rush Trajectories — Frame ", input$frame_slider,
+                          " (", round(input$frame_slider / 10, 1), "s post-snap)"),
+        subtitle = "Dashed white = avg path | X = QB | Circle = rusher start",
+        x        = "Sideline Distance from QB (yards)",
+        y        = "Depth toward QB (yards)",
+        color    = "Outcome"
+      ) +
+      coord_fixed() +
+     theme_minimal() +
+     theme(
+      panel.background  = element_rect(fill = "#1C1C1C", color = NA),
+      plot.background   = element_rect(fill = "#1C1C1C", color = NA),
+      panel.grid.major  = element_line(color = "#3a3a3a"),
+      panel.grid.minor  = element_line(color = "#2a2a2a"),
+      strip.background  = element_rect(fill = "#2d2d2d", color = NA),
+      strip.text        = element_text(face = "bold", size = 14, color = "white"),
+      legend.background = element_rect(fill = "#1C1C1C"),
+      legend.text       = element_text(color = "white"),
+      legend.title      = element_text(color = "white"),
+      axis.text         = element_text(color = "#aaaaaa"),
+      axis.title        = element_text(color = "#cccccc"),
+      plot.title        = element_text(face = "bold", size = 13, hjust = 0.5, color = "white"),
+      plot.subtitle     = element_text(hjust = 0.5, color = "#aaaaaa"),
+      legend.position   = "bottom"
+)
+  }, res = 96, bg = "#1C1C1C")
+
+  outputOptions(output, "spaghetti_plot", suspendWhenHidden = FALSE)
+}
+
+# ── LAUNCH ────────────────────────────────────────────────────────────────────
+shinyApp(ui = ui, server = server)
+
+```
+
+```{r}
+?coalesce()
 ```
 
